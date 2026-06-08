@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Uni Tracker">
+  <meta name="theme-color" content="#080E1A">
+  <title>Uni Tracker – TUM</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    html { color-scheme: dark; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #080E1A; -webkit-text-size-adjust: 100%; }
+    button { cursor: pointer; -webkit-tap-highlight-color: transparent; border: none; }
+    input, textarea, button { font-family: -apple-system, 'Segoe UI', sans-serif; }
+    input:focus, textarea:focus { outline: none; }
+    textarea { -webkit-appearance: none; resize: vertical; }
+    ::placeholder { color: rgba(255,255,255,0.18); }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const S = {
+  Mechanik:    { c:"#818CF8", bg:"rgba(99,102,241,0.15)",  bd:"rgba(99,102,241,0.3)"  },
+  Mathe:       { c:"#C084FC", bg:"rgba(168,85,247,0.15)",  bd:"rgba(168,85,247,0.3)"  },
+  "E Technik": { c:"#FB923C", bg:"rgba(251,146,60,0.15)",  bd:"rgba(251,146,60,0.3)"  },
+  IT:          { c:"#4ADE80", bg:"rgba(74,222,128,0.12)",  bd:"rgba(74,222,128,0.3)"  },
+  Cax:         { c:"#2DD4BF", bg:"rgba(45,212,191,0.12)",  bd:"rgba(45,212,191,0.3)"  },
+};
+
+const kwRange = kw => {
+  const jan4 = new Date(2026,0,4);
+  const dow = jan4.getDay()||7;
+  const w1 = new Date(jan4); w1.setDate(jan4.getDate()-(dow-1));
+  const mon = new Date(w1); mon.setDate(w1.getDate()+(kw-1)*7);
+  const fri = new Date(mon); fri.setDate(mon.getDate()+4);
+  const f = d=>`${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}`;
+  return `${f(mon)} – ${f(fri)}`;
+};
+
+const freshWeek = ()=>({
+  v:[
+    {id:"v0",label:"Mechanik",sub:"Mo",subject:"Mechanik",done:false},
+    {id:"v1",label:"Cax",subject:"Cax",done:false},
+    {id:"v2",label:"IT",subject:"IT",done:false},
+    {id:"v3",label:"E Technik",subject:"E Technik",done:false},
+    {id:"v4",label:"Mechanik",sub:"Do",subject:"Mechanik",done:false},
+    {id:"v5",label:"Mechanik ZÜ",subject:"Mechanik",done:false},
+    {id:"v6",label:"Mathe ZÜ",subject:"Mathe",done:false},
+  ],
+  t:[
+    {id:"t0",label:"Mechanik",subject:"Mechanik",done:false,blatt:""},
+    {id:"t1",label:"IT",subject:"IT",done:false,blatt:""},
+    {id:"t2",label:"E Technik",subject:"E Technik",done:false,blatt:""},
+    {id:"t3",label:"Mathe",subject:"Mathe",done:false,blatt:""},
+  ],
+  a:[
+    {id:"a0",label:"Mechanik",subject:"Mechanik",done:false,etest:false},
+    {id:"a1",label:"IT",subject:"IT",done:false,etest:true},
+    {id:"a2",label:"E Technik",subject:"E Technik",done:false,etest:false},
+    {id:"a3",label:"Mathe",subject:"Mathe",done:false,etest:false},
+    {id:"a4",label:"Cax",subject:"Cax",done:false,etest:false},
+  ],
+  notes:"",
+});
+
+const load=(k,fb)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb;}catch{return fb;}};
+const save=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
+
+// ── SVG Ring progress indicator ─────────────────────────────────
+const Ring=({done,total,accent})=>{
+  const pct=total?done/total:0, r=9, c=2*Math.PI*r;
+  return(
+    <svg width="26" height="26" style={{flexShrink:0,transform:"rotate(-90deg)"}}>
+      <circle cx="13" cy="13" r={r} stroke="rgba(255,255,255,0.07)" strokeWidth="2.5" fill="none"/>
+      <circle cx="13" cy="13" r={r} stroke={accent} strokeWidth="2.5" fill="none"
+        strokeDasharray={`${pct*c} ${c}`} strokeLinecap="round"
+        style={{transition:"stroke-dasharray 0.4s ease"}}/>
+    </svg>
+  );
+};
+
+// ── Atoms ───────────────────────────────────────────────────────
+const Tag=({subject})=>{
+  const t=S[subject]||{c:"rgba(255,255,255,0.4)",bg:"rgba(255,255,255,0.06)",bd:"rgba(255,255,255,0.12)"};
+  return<span style={{background:t.bg,color:t.c,border:`1px solid ${t.bd}`,borderRadius:5,padding:"1px 7px",fontSize:11,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{subject}</span>;
+};
+
+const Cb=({done,subject,onClick})=>{
+  const t=S[subject]||{c:"#818CF8"};
+  return(
+    <button onClick={onClick} style={{
+      width:22,height:22,borderRadius:7,flexShrink:0,
+      border:done?"none":"1.5px solid rgba(255,255,255,0.14)",
+      background:done?t.c:"rgba(255,255,255,0.04)",
+      boxShadow:done?`0 0 10px ${t.c}66`:"none",
+      display:"flex",alignItems:"center",justifyContent:"center",
+      transition:"all 0.15s",
+    }}>
+      {done&&<svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5L4.5 8.5L9.5 2.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+    </button>
+  );
+};
+
+const Row=({item,last,onToggle,extra})=>(
+  <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:last?"none":"1px solid rgba(255,255,255,0.05)"}}>
+    <Cb done={item.done} subject={item.subject} onClick={onToggle}/>
+    <span style={{flex:1,fontSize:14,color:item.done?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.85)",textDecoration:item.done?"line-through":"none"}}>
+      {item.label}{item.sub&&<span style={{fontSize:12,color:"rgba(255,255,255,0.25)",marginLeft:5}}>({item.sub})</span>}
+    </span>
+    <Tag subject={item.subject}/>{extra}
+  </div>
+);
+
+const Card=({title,accent,done,total,children})=>(
+  <div style={{
+    position:"relative",background:"rgba(255,255,255,0.03)",
+    borderRadius:16,marginBottom:12,overflow:"hidden",
+    border:"1px solid rgba(255,255,255,0.07)",
+    boxShadow:"0 4px 28px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.04)",
+  }}>
+    <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,
+      background:`linear-gradient(to bottom,${accent},${accent}99,transparent)`}}/>
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"16px 18px 14px 18px"}}>
+      <span style={{flex:1,fontSize:15,fontWeight:700,color:"rgba(255,255,255,0.88)"}}>{title}</span>
+      <Ring done={done} total={total} accent={accent}/>
+      <span style={{fontSize:13,fontWeight:700,color:accent,minWidth:28,textAlign:"right"}}>{done}/{total}</span>
+    </div>
+    <div style={{padding:"0 18px 16px"}}>{children}</div>
+  </div>
+);
+
+const NavBtn=({onClick,children})=>(
+  <button onClick={onClick} style={{
+    background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.1)",
+    color:"rgba(255,255,255,0.45)",borderRadius:10,padding:"8px 14px",
+    fontSize:12,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,
+  }}>{children}</button>
+);
+
+const GradKW=({kw,size=68})=>(
+  <span style={{
+    fontSize:size,fontWeight:900,lineHeight:1,
+    background:"linear-gradient(135deg,#818CF8 30%,#C084FC 70%)",
+    WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
+    display:"inline-block",
+  }}>{kw}</span>
+);
+
+const ProgressBar=({pct,doneN,total})=>(
+  <div>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,letterSpacing:"0.09em",
+      fontWeight:700,color:"rgba(255,255,255,0.25)",marginBottom:8}}>
+      <span>WOCHENFORTSCHRITT</span>
+      <span style={{color:pct===100?"#4ADE80":"rgba(255,255,255,0.35)"}}>{doneN}/{total} · {pct}%</span>
+    </div>
+    <div style={{background:"rgba(255,255,255,0.07)",borderRadius:999,height:7,overflow:"hidden"}}>
+      <div style={{
+        background:pct===100?"#22C55E":"linear-gradient(90deg,#6366F1,#A855F7,#EC4899)",
+        borderRadius:999,height:7,width:pct+"%",transition:"width 0.4s ease",
+        boxShadow:pct>0?"0 0 12px rgba(130,100,255,0.55)":"none",
+      }}/>
+    </div>
+    {pct===100&&<div style={{textAlign:"center",marginTop:10,fontSize:14,color:"#4ADE80",fontWeight:700}}>🎉 Alles erledigt – starke Woche!</div>}
+  </div>
+);
+
+// ── Main ────────────────────────────────────────────────────────
+function App(){
+  const [kw,setKw]       = useState(()=>load("uni_kw",23));
+  const [weeks,setWeeks] = useState(()=>load("uni_weeks",{23:freshWeek()}));
+  const [isLS,setIsLS]   = useState(()=>window.matchMedia("(orientation:landscape) and (min-width:700px)").matches);
+
+  useEffect(()=>{save("uni_kw",kw);},[kw]);
+  useEffect(()=>{save("uni_weeks",weeks);},[weeks]);
+  useEffect(()=>{
+    const mq=window.matchMedia("(orientation:landscape) and (min-width:700px)");
+    const h=e=>setIsLS(e.matches);
+    mq.addEventListener("change",h); return()=>mq.removeEventListener("change",h);
+  },[]);
+
+  const wk=weeks[kw]??freshWeek();
+  const upd=fn=>setWeeks(p=>({...p,[kw]:fn(p[kw]??freshWeek())}));
+  const toggle=(s,id)=>upd(w=>({...w,[s]:w[s].map(i=>i.id===id?{...i,done:!i.done}:i)}));
+  const patch=(s,id,f,v)=>upd(w=>({...w,[s]:w[s].map(i=>i.id===id?{...i,[f]:v}:i)}));
+  const nav=d=>{const n=kw+d;setKw(n);setWeeks(p=>p[n]?p:{...p,[n]:freshWeek()});};
+
+  const all=[...wk.v,...wk.t,...wk.a];
+  const doneN=all.filter(i=>i.done).length;
+  const pct=Math.round(doneN/all.length*100);
+
+  const inputStyle={width:70,padding:"4px 9px",border:"1px solid rgba(255,255,255,0.1)",
+    borderRadius:7,fontSize:12,color:"rgba(255,255,255,0.55)",background:"rgba(255,255,255,0.06)"};
+
+  const vCard=(
+    <Card title="📚 Vorlesungen" accent="#818CF8" done={wk.v.filter(i=>i.done).length} total={wk.v.length}>
+      {wk.v.map((it,i)=><Row key={it.id} item={it} last={i===wk.v.length-1} onToggle={()=>toggle("v",it.id)}/>)}
+    </Card>
+  );
+  const tCard=(
+    <Card title="📝 Tutorien" accent="#C084FC" done={wk.t.filter(i=>i.done).length} total={wk.t.length}>
+      {wk.t.map((it,i)=>(
+        <Row key={it.id} item={it} last={i===wk.t.length-1} onToggle={()=>toggle("t",it.id)}
+          extra={<input value={it.blatt} onChange={e=>patch("t",it.id,"blatt",e.target.value)} placeholder="Blatt #" style={inputStyle}/>}
+        />
+      ))}
+    </Card>
+  );
+  const aCard=(
+    <Card title="⚡ E-Tests & Abgaben" accent="#FB923C" done={wk.a.filter(i=>i.done).length} total={wk.a.length}>
+      {wk.a.map((it,i)=>(
+        <Row key={it.id} item={it} last={i===wk.a.length-1} onToggle={()=>toggle("a",it.id)}
+          extra={<button onClick={()=>patch("a",it.id,"etest",!it.etest)} style={{
+            border:"none",borderRadius:6,padding:"3px 9px",fontSize:11,fontWeight:700,
+            background:it.etest?"rgba(234,179,8,0.15)":"rgba(255,255,255,0.06)",
+            color:it.etest?"#FCD34D":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",flexShrink:0,
+          }}>{it.etest?"⚡ E-Test":"Abgabe"}</button>}
+        />
+      ))}
+    </Card>
+  );
+  const nCard=(
+    <div style={{background:"rgba(255,255,255,0.03)",borderRadius:16,padding:"18px",
+      border:"1px solid rgba(255,255,255,0.07)",boxShadow:"0 4px 28px rgba(0,0,0,0.35)"}}>
+      <div style={{fontSize:15,fontWeight:700,color:"rgba(255,255,255,0.65)",marginBottom:12}}>📋 Notizen</div>
+      <textarea value={wk.notes} onChange={e=>upd(w=>({...w,notes:e.target.value}))}
+        placeholder="Notizen, Deadlines, Wichtiges..." rows={isLS?6:4}
+        style={{width:"100%",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
+          padding:"10px 14px",fontSize:14,color:"rgba(255,255,255,0.7)",
+          background:"rgba(255,255,255,0.04)",lineHeight:1.6}}
+      />
+    </div>
+  );
+
+  const BG="radial-gradient(ellipse at 12% 55%, rgba(99,102,241,0.13) 0%, transparent 52%), " +
+           "radial-gradient(ellipse at 88% 18%, rgba(168,85,247,0.09) 0%, transparent 50%), " +
+           "radial-gradient(ellipse at 55% 95%, rgba(45,212,191,0.06) 0%, transparent 45%), " +
+           "#080E1A";
+
+  const subjectLegend=(small)=>(
+    <div style={{display:"flex",flexWrap:"wrap",gap:small?5:7}}>
+      {Object.entries(S).map(([n,{c,bg,bd}])=>(
+        <span key={n} style={{background:bg,color:c,border:`1px solid ${bd}`,borderRadius:999,
+          padding:small?"2px 8px":"4px 12px",fontSize:small?10:12,fontWeight:700}}>{n}</span>
+      ))}
+    </div>
+  );
+
+  // ── QUERFORMAT ──────────────────────────────────────────────────
+  if(isLS) return(
+    <div style={{fontFamily:"-apple-system,'Segoe UI',sans-serif",background:BG,minHeight:"100vh",
+      padding:`calc(10px + env(safe-area-inset-top)) 20px 16px`}}>
+
+      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",
+        borderRadius:14,padding:"12px 18px",marginBottom:14,
+        display:"flex",alignItems:"center",gap:14,
+        backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)"}}>
+
+        <NavBtn onClick={()=>nav(-1)}>← KW {kw-1}</NavBtn>
+
+        <div style={{display:"flex",alignItems:"baseline",gap:8,flexShrink:0}}>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.2)",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>KW</span>
+          <GradKW kw={kw} size={34}/>
+          <div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.42)",fontWeight:600,lineHeight:1.4}}>{kwRange(kw)}</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.2)"}}>TU München · Sem 2</div>
+          </div>
+        </div>
+
+        <div style={{width:1,height:32,background:"rgba(255,255,255,0.08)",flexShrink:0}}/>
+
+        <div style={{flex:1,minWidth:100}}>
+          <ProgressBar pct={pct} doneN={doneN} total={all.length}/>
+        </div>
+
+        <div style={{width:1,height:32,background:"rgba(255,255,255,0.08)",flexShrink:0}}/>
+
+        <div style={{maxWidth:200}}>{subjectLegend(true)}</div>
+
+        <NavBtn onClick={()=>nav(1)}>KW {kw+1} →</NavBtn>
+      </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+        <div>{vCard}{nCard}</div>
+        <div>{tCard}{aCard}</div>
+      </div>
+    </div>
+  );
+
+  // ── HOCHFORMAT ──────────────────────────────────────────────────
+  return(
+    <div style={{fontFamily:"-apple-system,'Segoe UI',sans-serif",background:BG,minHeight:"100vh",
+      padding:`calc(20px + env(safe-area-inset-top)) 16px 40px`}}>
+      <div style={{maxWidth:600,margin:"0 auto"}}>
+
+        <div style={{
+          background:"radial-gradient(ellipse at 30% 65%, rgba(99,102,241,0.2) 0%, transparent 55%), " +
+                     "radial-gradient(ellipse at 72% 35%, rgba(168,85,247,0.14) 0%, transparent 55%), " +
+                     "rgba(13,20,38,0.92)",
+          borderRadius:22,padding:"26px 24px",marginBottom:14,
+          border:"1px solid rgba(255,255,255,0.08)",
+          boxShadow:"0 8px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.06)",
+          backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",
+        }}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:22}}>
+            <NavBtn onClick={()=>nav(-1)}>← KW {kw-1}</NavBtn>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:10,color:"rgba(255,255,255,0.22)",textTransform:"uppercase",
+                letterSpacing:"0.16em",fontWeight:700,marginBottom:6}}>Kalenderwoche</div>
+              <GradKW kw={kw} size={72}/>
+              <div style={{fontSize:14,color:"rgba(255,255,255,0.38)",marginTop:8,fontWeight:600}}>{kwRange(kw)}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.2)",marginTop:3}}>TU München · Semester 2</div>
+            </div>
+            <NavBtn onClick={()=>nav(1)}>KW {kw+1} →</NavBtn>
+          </div>
+          <ProgressBar pct={pct} doneN={doneN} total={all.length}/>
+        </div>
+
+        <div style={{marginBottom:14}}>{subjectLegend(false)}</div>
+
+        {vCard}{tCard}{aCard}{nCard}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
